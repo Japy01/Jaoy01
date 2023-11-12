@@ -1,0 +1,872 @@
+************************************************************************
+* Include con macros tratamiento cadenas caracteres FORM en FORMULARIOS*
+************************************************************************
+*$*$
+*$*$                     INDICE DE MACROS
+*$*$ ppo
+
+*-   FAIL ==> LA CLASICA, LANZA UN MENSAJE 'X', PASO A DUMP Y DESDE ALLI
+*-             A DEBUGGEAR
+
+*-   LEE_ENTRADA ==> Lee el indice pasado como primer parametero de la
+*-             input-table y lo lleva justificado a la izquierda la
+*-             variable (cadena de caracteres) pasado como segundo
+*-             parametro.  ( &2 = INPUT_TABLE INDICE &1 )
+*-             COMENTARIO IMPORTANTE ==> NO HACE UNPACK PARA VARIABLES
+*-             DE TIPO NUMC ==> ¿ PORQUE ? LA NECESIDAD DE UTILIZACION
+*-             DE UNPACK NO ES EN ABSOLUTO SISTEMATICA, UN EJEMPLO
+*-             CLASICO: EKKO-EBELN NECESITA EN SELECT CEROS PARA
+*-             JUSTIFICAR A IZQUIERDA PERO SU TIPO NO ES NUMC,
+*-             ==> PARA NO PERDER GENERALIDAD, EL UNPACK DE SER
+*-             PRECISO, HA DE SER REALIZADO EN EL PROGRAMA INVOCADOR
+
+*-    INSERTA_SALIDA ==> Lleva a la OTUPUT_TABLE con indice el pasado
+*-             como primer parametro, el valor de la cadena de caractere
+*-             pasado como segundo parametro
+
+
+*$*$ IMPORTANTE: ¿ LE CONVIENE UTILIZAR QUITA_D_CIFRA_CEROS_INUTILES2?
+*-    QUITA_D_CIFRA_CEROS_INUTILES ==> PARA CADENAS DE CARACTERES QUE
+*-             REPRESENTAN CANTIDADES EN LAS QUE ¡INVARIABLEMENTE! LA
+*-             NOTACION ES: PARTE ENTERA ( CON MILES SEPARADOS POR
+*-             PUNTOS) PARTE DECIMAL ( SEPARADA POR UNA COMA DE LA PARTE
+*-             ENTERA ) EN LAS QUE SE DESEA ELIMINAR LA PARTE DECIMAL
+*-             EN CASO DE QUE ESTE SOLO CONTENGA CEROS.
+*-             (RECONOCE SIGNO NEGATIVOS A DCHA. E IZQ.)
+
+*$*$ USO MAS POTENTE QUE LA MACRO ANTERIOR
+*-    QUITA_D_CIFRA_CEROS_INUTILES2 ==> INDEPENDIENTEMENTE DE QUE LAS
+*-             PARTE DECIMAL Y ENTERA ESTEN SEPARADAS POR COMAS O PUNTOS
+*-             ¡¡¡ PERO OBLIGATORIAMENTE HAN DE APARECER TANTO PUNTO
+*-             COMO COMAS !!! ELIMINA LA PARTE DECIMAL EN CASO DE ESTAR
+*-             CONSTITUIDA UNICAMENTE POR CEROS.
+
+*-     DIME_SI_HAY_TEXTO ==> DETERMINAR EN UNA UNICA SENTENCIA SI EXISTE
+*-             UN TEXTO-SAP PASADO COMO PARAMETRO
+
+*-     INVIERTE_CADENA_CARACTERES ==> INVIERTE UNA CADENA DE LITERALES
+*-             PASADA COMO PARAMETRO Y SE DEVUELVE JUSTIFICADO A IZQ.
+
+*-     SEPARA_CANTIDAD_POR_MILES_AUX ==> SEPARA LAS UNIDADES DE MIL
+*-          POR PUNTOS O COMAS DEPENDIENDO DE LO QUE HAYA ESCOJIDO EL
+*-          USUARIO. NO ADMITE DECIMALES Y EL RESULTADO ES DEL TIPO
+*-          CARACTER.
+
+*-     SEPARA_TYPE_P_POR_MILES ==> SEPARA LAS UNIDADES DE MIL POR PUNTOS
+*-          O COMAS DEPENDIENDO DE LO QUE HAYA ESCOJIDO EL USUARIO.
+*-          LA CANTIDAD DE ENTRADA ES DE TIPO P, POR LO QUE ADMITE
+*-          DECIMALES. EL RESULTADO ES DEL TIPO CARACTER.
+
+*-     OBTENER_TEXTO_ESTANDAR  ==> OBTIENE LA PRIMERA LINEA DE UN TEXTO
+*-          ESTANDAR Y LO DEVUELVE EN UNA VARIABLE. ESTO PERMITE UTILI-
+*-          ZAR TABULADORES, PARRAFOS Y STRING SOBRE EL TEXTO ESTANDAR,
+*-          COSA QUE CON UN INCLUDE NO SE PUEDE HACER.-
+
+*-     JUSTIFICAR_TEXTO ==>
+*-
+
+*-     BORRAR_INCLUDE  ==> BORRA CUALQUIER TEXTO ESTANDAR Y NO ESTANDAR
+*-          UNICAMENTE NECESITA QUE SE LE PASE EL  ID, EL OBJECT, EL
+*-          NAME Y EL LANGUAGE.
+
+************************************************************************
+*                    BLOQUE DE DEFINICIONES                            *
+************************************************************************
+CONSTANTS: AMPER VALUE '&'.
+
+DATA: OFFSET$        TYPE I,  " OFFSET DE VARIABLES EN MOVE'S DE CADENAS
+      ENTERO$        TYPE I,  " VARIABLE ENTERA CALCULOS INTERMEDIOS
+      VALOR_AUX$(10) TYPE C,  " CHAR DE 10
+      FLAG$(1)       TYPE C.           " CHAR QUE FUNCIONA COMO BOOLEANO
+
+DATA: PARAMETRO_ID$       LIKE THEAD-TDID,
+      PARAMETRO_LANGUAGE$ LIKE THEAD-TDSPRAS,
+      PARAMETRO_NAME$     LIKE THEAD-TDNAME,
+      PARAMETRO_OBJECT$   LIKE THEAD-TDOBJECT,
+      COLUM_$             TYPE I.
+
+DATA: SIMBOLO$(50)            TYPE C,
+      CADENA_EXAGERADA$(235)  TYPE C,
+      CADENA_EXAGERADA2$(235) TYPE C,
+      POSICION_PUNTO$         LIKE SY-FDPOS,
+      POSICION_COMA$          LIKE SY-FDPOS,
+      ENTERO2$                TYPE I,
+      INDICADOR_POSICION$.
+
+DATA: D_ID$       LIKE THEAD-TDID,
+      D_LANGUAGE$ LIKE THEAD-TDSPRAS,
+      D_NAME$     LIKE THEAD-TDNAME,
+      D_OBJECT$   LIKE THEAD-TDOBJECT.
+
+DATA: STRING3$(3)          TYPE C,
+*     INTEGER$$            TYPE I,
+      INTEGER$$            TYPE P DECIMALS 0,
+      INTEGER2$$           TYPE P DECIMALS 8,
+      INTEGER$$$           TYPE I,
+      STRING_SUSTITUIR$(1) TYPE C,
+      VARIABLE_SALIDA$(30) TYPE C,
+      CANT_ITERACIONES$    TYPE I,
+      SW$                  TYPE I,
+      CARACTER_CONTARIO$   TYPE C,
+      PARTE_ENTERA$(30)    TYPE C,
+      PARTE_DECIMAL$(10)   TYPE C,
+      NUMERO_DECIMALES$    TYPE I.
+DATA: ENTERO$_CHAR(25)     TYPE C.
+DATA: J_CABECERA$   LIKE THEAD,
+      J_LONG$       LIKE TDCLD-DOKLENGTH1,
+      J_ID$         LIKE THEAD-TDID,
+      J_LANGUAGE$   LIKE THEAD-TDSPRAS,
+      J_NAME$       LIKE THEAD-TDNAME,
+      J_NOMBRE$     LIKE THEAD-TDNAME,
+      J_OBJECT$     LIKE THEAD-TDOBJECT.
+
+DATA: BEGIN OF J_TEXTOS$ OCCURS 1.
+        INCLUDE STRUCTURE TLINE.
+DATA: END OF J_TEXTOS$.
+DATA: BEGIN OF J_TEXTOS_AJUSTADOS$ OCCURS 1.
+        INCLUDE STRUCTURE TLINE.
+DATA: END OF J_TEXTOS_AJUSTADOS$.
+
+
+*- Definción de una tabla con la estructura del parametro devuelto por
+*- la función READ_TEXT
+DATA: BEGIN OF LINES_TEXTO$ OCCURS 10.
+        INCLUDE STRUCTURE TLINE.
+DATA: END OF LINES_TEXTO$.
+
+DATA: BEGIN OF LINE_TEXTO_$2 OCCURS 10.
+        INCLUDE STRUCTURE TLINE.
+DATA: END OF LINE_TEXTO_$2.
+
+
+*$*$                                                                *$*$
+*$*$                 DEFINICIONES DE MACRO                          *$*$
+*$*$                                                                *$*$
+
+************************************************************************
+*-                        <<  FAIL >>                                 -*
+************************************************************************
+*- Descripcion ==> Para formulario reveldes, para perform llamadas desde
+*-                 el formulario lanzando un DUMP y permitiendo al
+*-                 usuario entrar dentro del mensaje DUMP en el modo
+*-                 DEBUGGER.
+DEFINE PARAR_PROGRAMA_LANZANDO_DUMP.
+  MESSAGE X036(YS) WITH SY-SUBRC SY-REPID SY-CPROG.
+END-OF-DEFINITION.
+
+************************************************************************
+*-                << LEE_ENTRADA >>                                   -*
+************************************************************************
+*- DESCRIPCION ==> Admite dos parametros de entrada: el primero sera
+*-                 un "indice" para indicar el numero de la entrda de la
+*-                 INPUT_TABLE que se desea leer; el segundo parametro
+*-                 es el nombre de la variable a la que se desea mover
+*-                 el contenido del campo IMPUT_TABLE-VALUE que acaba
+*-                 de ser leido ( el valor es escrito justificado a la
+*-                 izquierda)
+DEFINE LEE_ENTRADA.
+  READ TABLE INPUT_TABLE INDEX &1.
+*- Justificación a la izquierda del campo leido de la tabla
+  CONDENSE INPUT_TABLE VALUE.
+  MOVE INPUT_TABLE-VALUE TO &2+0.
+END-OF-DEFINITION.
+
+************************************************************************
+*-                << INSERTA_SALIDA >>                                -*
+************************************************************************
+*- DESCRIPCION ==> La opción antagonista de la anterior macro, inserta
+*-                 en la entrada numero &1 de la OUTPUT_TABLE el valor
+*-                 de la varible &2 ( justificado a la izquierda )
+DEFINE INSERTA_SALIDA.
+  READ TABLE OUTPUT_TABLE INDEX &1.
+* move &2 to output_table-value+0.
+  MOVE &2 TO OUTPUT_TABLE-VALUE.
+  CONDENSE OUTPUT_TABLE-VALUE.
+  MODIFY OUTPUT_TABLE INDEX &1.
+END-OF-DEFINITION.
+************************************************************************
+*-          << QUITA_D_CIFRA_CEROS_INUTILES >>                        -*
+************************************************************************
+*- Descripcion ==>  Sea una cifra que esta escrita en formato:
+"( MILES, MILLONES ... SEPARADOS POR PUNTOS Y PARTE DECIMAL POR UN COMA)
+*-                  '3.234.234,123' y definida como una cadena de
+*                   caracteres; si se desea que en caso de que la
+*                   parte decimal de la variable, no se presente cuando
+*                   solamente contenga ceros,  llamar a esta macro:
+*               quita_d_cifra_ceros_inutiles entrada salida
+*                   donde: * entrada es la variable ( '3.234.234,123' )
+*                          * salida es la variable salida escrita en
+*                            el formato deseado
+*                   La variable de salida no es modificada cuando la
+*                   parte decimal no contiene solo ceros.
+*                   Ejemplos:
+                   ENTRADA                      SALIDA"
+*                   '3.234,123'  <==========>  '3.234.123'  ( NO VARIA )
+*                   '19.236.00'  <==========>  '19.236'
+* ==> COMENTARIO:   '0,000000000'<==========>  '0'
+* ==> SOPORTA "SIGNO A IZQUIERDA Y DERECHA":
+"                   ENTRADA                      SALIDA
+*                  '-3.125,000' <==========>    '-3.125'.
+*                  '3.125,000-' <==========>    '3.125-'.
+
+DEFINE QUITA_D_CIFRA_CEROS_INUTILES.
+  CLEAR FLAG$.
+  SEARCH &1 FOR ','.
+  IF SY-SUBRC NE '0'.   de no hallar ',' el valor escrito sin decimales"
+    MOVE &1 TO &2.
+  ELSE.                " existe la cadena ','
+    OFFSET$ = SY-FDPOS + 1.         " determinacion de la posicion
+    MOVE &1+OFFSET$ TO VALOR_AUX$.
+*-----
+    SEARCH VALOR_AUX$ FOR '-'.   " ¿ tiene signo menos a la derecha?
+      IF SY-SUBRC EQ '0'.
+        MOVE 'X' TO FLAG$.
+        MOVE VALOR_AUX$+0(SY-FDPOS) TO VALOR_AUX$.
+      ENDIF.
+*-------
+    ENTERO$ = VALOR_AUX$.
+      IF ENTERO$ NE 0.
+        MOVE &1 TO &2.
+      ELSEIF ENTERO$ EQ 0.
+        OFFSET$ = OFFSET$ - 1.
+            MOVE &1+0(OFFSET$) TO &2.
+           IF ( NOT ( FLAG$ IS INITIAL ) ) . " - a derecha campo entrada
+             MOVE '-' TO &2+OFFSET$.
+          ENDIF.
+      ENDIF.
+  ENDIF.
+
+END-OF-DEFINITION.
+
+
+*- TERMINA LA DEFINICION DE LA MACRO << QUITA_D_CIFRA_CEROS_INUTILES >>
+
+
+************************************************************************
+*-          << DIME_SI_HAY_TEXTO >>                                   -*
+************************************************************************
+DEFINE DIME_SI_HAY_TEXTO.
+*- DESCRIPCION ==> Utilizado para comprobar la existencia de textos
+*-                 mediante llamada a la funcion READ_TEXT
+*--- OJO ==> NO VALIDO PARA TEXTOS REFERENCIADOS
+* PARAMETROS ENTRADA: &1 ==> ID DEL TEXTO A BUSCAR
+*                     &2 ==> LENGUAJE DEL TEXTO A BUSCAR.
+*                     &3 ==> NOMBRE DEL TEXTO
+*                     &4 ==> OBJETO
+*  SALIDA ==> UN CHAR ( EL QUINTO PARAMETRO ) QUE TIENE:
+*             'S' ==> SI EXISTE TEXTO.
+*             'N' ==> NO EXITE TEXTO.
+* SI HAY ALGUN TIPO DE ERROR SE DEVUELVE 'E' EN &5
+  CLEAR LINES_TEXTO$.
+  MOVE: &1 TO  PARAMETRO_ID$,
+        &2 TO  PARAMETRO_LANGUAGE$,
+        &3 TO  PARAMETRO_NAME$,
+        &4 TO  PARAMETRO_OBJECT$.
+
+  CALL FUNCTION 'READ_TEXT'
+       EXPORTING
+           CLIENT                   = SY-MANDT
+            ID                      = PARAMETRO_ID$
+            LANGUAGE                = PARAMETRO_LANGUAGE$
+            NAME                    = PARAMETRO_NAME$
+            OBJECT                  = PARAMETRO_OBJECT$
+*           ARCHIVE_HANDLE          = 0
+*      IMPORTING
+*           HEADER                  =
+       TABLES
+            LINES                   = LINES_TEXTO$
+       EXCEPTIONS
+            ID                      = 1
+            LANGUAGE                = 2
+            NAME                    = 3
+            NOT_FOUND               = 4
+            OBJECT                  = 5
+            REFERENCE_CHECK         = 6
+            WRONG_ACCESS_TO_ARCHIVE = 7
+            OTHERS                  = 8.
+  CASE SY-SUBRC.
+     WHEN '0'.   " Llamada a la funcion sin error
+        DESCRIBE TABLE LINES_TEXTO$ LINES ENTERO$.
+        IF ENTERO$ EQ '0'.  " no entradas en la tabla
+          MOVE 'N' TO &5.
+        ELSE.               " si entradas en la tabla
+          MOVE 'S' TO &5.
+        ENDIF.
+     WHEN '4'.
+          MOVE 'N' TO &5.
+     WHEN OTHERS.  " La llamada a la funcion retorna un codigo de error
+        MOVE 'E' TO &5.
+  ENDCASE.
+END-OF-DEFINITION.
+
+************************************************************************
+*-           <<  QUITA_D_CIFRA_CEROS_INUTILES2 >>                     -*
+************************************************************************
+DEFINE QUITA_D_CIFRA_CEROS_INUTILES2.
+*- DESCRIPCION ==> Sea una cadena de caracteres que representa una
+*-                 cantidad  (tal como es presentada al usuario en un
+*-                 formulario), de forma que el FORMATO en el esta
+*-                 es representada, CONTIENE OBLIGATORIAMENTE PUNTOS Y
+*-                 COMAS PARA SEPARAR LA PARTE ENTERA DE LA DECIMAL DE
+*-                 LA CADENA, CUMPLIENDOSE QUE EL CARACTER UTILIZADO
+*-                 PARA SEPARAR LA PARTE DECIMAL SOLO APARECE UNA VEZ
+*-                 EN LA CADENA, MIENTRAS QUE EL CARACTER QUE SEPARA
+*-                 LOS MILES, MILLONES ... PUEDE APARECER UN NUMERO
+*-                 INDETERMINADO DE VECES ( INLCUSO CERO VECES, POR EJ:
+*-                  9,05 USDS ). LA MACRO SOPORTA CUALQUIER NUMERO
+*-                 DE CARACTERES DENTRO DE LA PARTE DECIMAL DE LA CANTID
+" ¡¡¡¡ INDEPENDIENTEMENTE DE QUE EN LA CADENA SE SEPAREN LOS MILES,
+ MILLONES ... POR COMAS 0 PUNTOS !!!!! LA MACRO SE UTILIZA CUANDO"
+" SE DESEE QUE EN CASO DE QUE LA PARTE DECIMAL DE LA VARIABLE NO SE
+ PRESENTE CUANDO SOLO CONTENGA CEROS."
+*-                 EL UNICO PARAMETRO QUE SOPORTA LA MACRO ACTUA
+*-                 COMO PARAMETRO DE ENTRADA/SALIDA ==> LA CANTIDAD
+*-                 COMO ES MANEJADA EN EL FORMULARO; ENTRA COMO ESTA
+*-                 EN EL PROGRAMA DE IMPRESION Y SALE SIGUIENDO EL
+*-                 CRITERIO COMENTADO.
+" IMPORTANTE ==> SOPORTA SIGNO NEGATIVO EN LA CANTIDAD, INDEPENDIENTE
+                MENTE DE QUE ESTE ESTÉ ESTA COMO EL PRIMER O ULTIMO"
+"                CARACTER DE LA CADENA.
+*-                 EJEMPLOS ==>
+
+           ENTRADA                         SALIDA"
+*-        -15.235,00                        -15.235
+*-         15,235.00                         15.235
+*-         15,235.00000-                     15,235-
+*-         15.200.257,000                    15.200.257
+*-         15.200.257,000-                   15.200.257-
+*-         0.000000000000                    0
+*-         0,000000000000                    0
+* RECOMENDACION ==> Hacer la llamada cuando el importe "P" ya ha sido
+*                   escrito como cadena de caracteres ( tras
+*                    write '' currency '' to '' o
+*                    write '' unit     '' to ''  ).
+*$*$
+*- Estrategia: Si se invierte la cadena de caracteres y se busca en la
+*-             cadena invertida tanto un punto como una coma;
+*-         a)
+*-             en caso de que ambos caracteres sean hallados, la
+*-             posicion relativa de ambas en esta, es la inversa a la
+*-             de la cadena escrita "correctamente":
+*-               ej '9.000,123' Evidentemente si en la cadena invertida
+*-             la posicion de la primera "COMA" es mas pequeña que de la
+*              del primer "PUNTO", en la cadena "directa" LA COMA ESTA
+*-             MAS A LA DERECHA QUE EL ULTIMO PUNTO ==> la cifra pasada
+*-             separa su parte decimal por comas
+*-         b)
+*-             en caso de que uno de los dos caracteres aparezca y el
+*-             otro no, el hallado es el utilizado por el sistema para
+*-             separar la parte decimal de la entera ¿ porque ?
+*-             9,000 ==> este numero seria: 0.000.009,000
+*-
+*-  Por otro lado para determinar si el valor pasado como parametro
+*-  tiene signo "menos" este es buscado en la cadena y la variable
+*-  indicador_posicion$ determina el lugar donde es hallado:
+*-      'I'   ==> está a la izquierda
+*-      'D'   ==> está a la derecha
+*-      clear ==> el valor pasado no tiene signo
+
+*- ¿ El parametro pasado como parametro tiene signo negativo ?
+  IF &1 CS '-'.   " el SEARCH tiene una utilizacion muy criticable
+    IF SY-FDPOS EQ '0'.
+      MOVE 'I' TO INDICADOR_POSICION$.      " singo menos a la izquierda
+      MOVE &1+1 TO &1.
+    ELSE.
+      MOVE 'D' TO INDICADOR_POSICION$.  " signo menos a la derecha
+      MOVE &1+0(SY-FDPOS) TO &1.
+    ENDIF.
+  ELSE.
+   CLEAR INDICADOR_POSICION$.
+  ENDIF.
+*-
+  WRITE &1 TO CADENA_EXAGERADA2$ LEFT-JUSTIFIED.
+   INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+*- BUSQUEDA DEL PUNTO, LA SENTENCIA SEARCH TIENE UN USO "DUDOSO"
+   IF CADENA_EXAGERADA2$ CS '.'.
+     POSICION_PUNTO$ = SY-FDPOS + 1.
+   ELSE.
+     POSICION_PUNTO$ = '0'.
+   ENDIF.
+*-  Busca LA COMA
+   IF CADENA_EXAGERADA2$ CS ','.
+     POSICION_COMA$ = SY-FDPOS + 1.
+   ELSE.
+     POSICION_COMA$ = '0'.
+   ENDIF.
+
+*$*$
+
+*- CASUISTICA sobre la posicion relativa del punto y de la coma
+ IF ( ( POSICION_COMA$ = '0' ) AND ( POSICION_PUNTO$ = '0' ) ).
+*- No hacer nada ¡no hay punto ni coma!
+ ELSEIF ( POSICION_PUNTO$ = '0' ).
+*- Solo hay coma ==> y es la que separa la parte decimal 98,900
+       POSICION_COMA$ = POSICION_COMA$ - 1.
+       MOVE CADENA_EXAGERADA2$+0(POSICION_COMA$) TO ENTERO$.
+     IF ENTERO$ EQ '0'.
+       POSICION_COMA$ = POSICION_COMA$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_COMA$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       &1 = CADENA_EXAGERADA2$.
+     ENDIF.
+ ELSEIF ( POSICION_COMA$ = '0' ).
+*- Solo hay punto ==> y es el que separa la parte decimal 98.900
+       POSICION_PUNTO$ = POSICION_PUNTO$ - 1.
+       MOVE CADENA_EXAGERADA2$+0(POSICION_PUNTO$) TO ENTERO$.
+     IF ENTERO$ EQ '0'.
+       POSICION_PUNTO$ = POSICION_PUNTO$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_PUNTO$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       &1 = CADENA_EXAGERADA2$.
+     ENDIF.
+ ELSEIF ( POSICION_COMA$ GT POSICION_PUNTO$ ).
+*- El punto determina la parte decimal del numero
+       POSICION_PUNTO$ = POSICION_PUNTO$ - 1.
+       MOVE CADENA_EXAGERADA2$+0(POSICION_PUNTO$) TO ENTERO$.
+     IF ENTERO$ EQ '0'.
+       POSICION_PUNTO$ = POSICION_PUNTO$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_PUNTO$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       &1 = CADENA_EXAGERADA2$.
+     ENDIF.
+ ELSEIF ( POSICION_PUNTO$ GT POSICION_COMA$ ).
+*- La coma determina la parte decimal del numero
+       POSICION_COMA$ = POSICION_COMA$ - 1.
+       MOVE CADENA_EXAGERADA2$+0(POSICION_COMA$) TO ENTERO$.
+     IF ENTERO$ EQ '0'.
+       POSICION_COMA$ = POSICION_COMA$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_COMA$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       &1 = CADENA_EXAGERADA2$.
+     ENDIF.
+ ENDIF.
+
+*- En este punto &1 tiene el "modulo" del valor pasado como parametro
+*- de acuerdo con la especifiación de la MACRO
+*- ==> en caso de haber sido detectado signo a la entrada, este es
+*-     situado en su posición relativa correcta
+
+*- Solo si se ha modificado el valor pasado como parametro
+  IF NOT ( ( POSICION_COMA$ = '0' ) AND ( POSICION_PUNTO$ = '0' ) ).
+    CASE INDICADOR_POSICION$.
+       WHEN 'D'.  " derecha
+         CONCATENATE &1 '-' INTO &1.
+         CONDENSE &1 NO-GAPS.
+       WHEN 'I'.  " izquierda
+         CONCATENATE '-' &1 INTO &1.
+         CONDENSE &1 NO-GAPS.
+    ENDCASE.
+ ENDIF.
+END-OF-DEFINITION.
+
+************************************************************************
+*-           << INVIERTE_CADENA_CARACTERES >>                         -*
+************************************************************************
+*- DESCRIPCION ==> Admite un unico parametro de entrada/salida una
+*-                 cadena de caracteres; a la salida de la macro, la
+*-                 cadena introducida esta invertida respecto a la
+*-                 entrada.
+
+DEFINE INVIERTE_CADENA_CARACTERES.   " Invierte una cadena de caracteres
+  CLEAR CADENA_EXAGERADA$.
+  ENTERO$ = STRLEN( &1 ).
+
+  WHILE ENTERO$ GT '0'.
+    ENTERO$ = ENTERO$ - 1.
+    MOVE &1+ENTERO$(1) TO FLAG$.
+    CONCATENATE CADENA_EXAGERADA$ FLAG$ INTO CADENA_EXAGERADA$.
+  ENDWHILE.
+
+  ENTERO$ = STRLEN( &1 ).
+  CLEAR &1.
+  MOVE CADENA_EXAGERADA$+0(ENTERO$) TO &1.
+END-OF-DEFINITION.
+
+************************************************************************
+*                  SEPARA_TYPE_P_POR_MILES
+************************************************************************
+*  Admite tres varibles, la primera un número de tipo p con varios deci-
+*  males y la segunda el tipo de variable que separa la parte entera de
+*  la parte decimal y el tercero una cadena de caracteres que ha de
+*  contener el parametro &1 pero como cadena de caracteres.
+*
+*  Si le pasamos 15457828,4578 ',' valor ==> a la salida de la macro
+*                              el parametro valor = '15.457.828,4578'
+*                                    ( ¡¡ como caracter !! )
+* Notar que el segundo parametro de la macro determina el caracter con
+* el que serán separadas la parte entera de la decimal a la salida
+* ==> por tanto los multiplos de mil de la parte entero serán separados
+* el caracter "reciproco" de &2:
+*                      si &2 = '.' ==> los miles separados por ','
+*                      si &2 = ',' ==> los miles separados por '.'
+************************************************************************
+DEFINE SEPARA_TYPE_P_POR_MILES.
+
+  DESCRIBE FIELD &1 DECIMALS NUMERO_DECIMALES$.
+
+  CASE &2.
+    WHEN ','. CARACTER_CONTARIO$ = '.'.
+    WHEN '.'. CARACTER_CONTARIO$ = ','.
+  ENDCASE.
+
+
+   INTEGER$$ = TRUNC( &1 ).
+   MOVE INTEGER$$ TO PARTE_ENTERA$.
+
+   INTEGER2$$ = &1 - INTEGER$$.
+   MOVE INTEGER2$$ TO PARTE_DECIMAL$.
+
+   MOVE PARTE_DECIMAL$+2(NUMERO_DECIMALES$) TO PARTE_DECIMAL$.
+
+   SHIFT PARTE_ENTERA$ LEFT DELETING LEADING SPACE.
+
+   SEPARA_CANTIDAD_POR_MILES_AUX PARTE_ENTERA$ &2.
+
+   CLEAR &3.
+
+   CONCATENATE PARTE_ENTERA$ CARACTER_CONTARIO$ PARTE_DECIMAL$ INTO &3.
+END-OF-DEFINITION.
+
+************************************************************************
+*                  SEPARA_CANTIDAD_POR_MILES_AUX
+************************************************************************
+*  Admite dos varibles, la primera una cadena de caracteres que
+*  representa la parte entera de una cantidad y la segunda el caracter
+*  con el que se desea separar los multiplos de mil de dicha cantidad
+*  Si le pasamos 15457828 '.' nos devuelve 15.457.828 dentro de &1
+************************************************************************
+DEFINE SEPARA_CANTIDAD_POR_MILES_AUX.
+
+  CLEAR VARIABLE_SALIDA$.
+  MOVE &2 TO STRING_SUSTITUIR$.
+  INTEGER$$$ = STRLEN( &1 ).
+  CANT_ITERACIONES$ = INTEGER$$$ DIV 3.
+  INVIERTE_CADENA_CARACTERES  &1.
+
+   CANT_ITERACIONES$ = CANT_ITERACIONES$ + 1.
+
+    DO CANT_ITERACIONES$ TIMES.
+       SW$ = 3 * ( SY-INDEX - 1 ).
+       MOVE &1+SW$(3) TO STRING3$.
+       CONCATENATE VARIABLE_SALIDA$ STRING_SUSTITUIR$ STRING3$ INTO
+                   VARIABLE_SALIDA$.
+   ENDDO.
+
+    MOVE VARIABLE_SALIDA$+1 TO VARIABLE_SALIDA$.
+    INVIERTE_CADENA_CARACTERES VARIABLE_SALIDA$.
+
+    IF VARIABLE_SALIDA$+0(1) EQ &2.
+      MOVE VARIABLE_SALIDA$+1 TO VARIABLE_SALIDA$.
+    ENDIF.
+
+    MOVE VARIABLE_SALIDA$ TO &1.
+
+END-OF-DEFINITION.
+************************************************************************
+*                     OBTENER_TEXTO_ESTANDAR
+************************************************************************
+*  Obtiene una linea dada de un texto estandar y lo almacena en una
+*  variable. Cuando un usuario tiene que introducir el a mano el texto
+*  estandar el no tiene porque conocer el parrafo que se está utilizando
+*  los tabuladores o los string. Entonces una forma de controlar esto es
+*  almecenar la linea indicada del texto estandar en una variable,a con-
+*  tinuación sobre esta pero ya en el formulario poner el parrafo,string
+*  y tabulaciones deseados.
+*  Esta macro te permite indicar la cantidad exacta de caracteres que
+*  deseas cojer del texto estandar. Si viene sin ningún valor se obten-
+*  la linea total.
+*  También te permite indicar si la alineación la deseamos a la iz-
+*  quierda o a la derecha.
+************************************************************************
+DEFINE OBTENER_TEXTO_ESTANDAR.
+
+  CLEAR LINE_TEXTO_$2.
+
+  CALL FUNCTION 'READ_TEXT'
+        EXPORTING
+             CLIENT                  = SY-MANDT
+             ID                      = &1
+             LANGUAGE                = &2
+             NAME                    = &3
+             OBJECT                  = &4
+        TABLES
+             LINES                   = LINE_TEXTO_$2
+        EXCEPTIONS
+             ID                      = 1
+             LANGUAGE                = 2
+             NAME                    = 3
+             NOT_FOUND               = 4
+             OBJECT                  = 5
+             REFERENCE_CHECK         = 6
+             WRONG_ACCESS_TO_ARCHIVE = 7
+             OTHERS                  = 8.
+
+  IF SY-SUBRC EQ 0.
+    READ TABLE LINE_TEXTO_$2 INDEX &5.
+    IF NOT &6 IS INITIAL.
+      MOVE LINE_TEXTO_$2-TDLINE(&6) TO &8(&6).
+      IF &7 EQ 'X'.
+        SHIFT &8 LEFT DELETING LEADING SPACE.
+      ELSEIF &7 EQ ' '.
+         SHIFT LINE_TEXTO_$2-TDLINE RIGHT DELETING TRAILING SPACE.
+         COLUM_$ = 132 - &6.
+         MOVE LINE_TEXTO_$2-TDLINE+COLUM_$(&6) TO &8.
+      ENDIF.
+    ELSE.
+      MOVE LINE_TEXTO_$2-TDLINE TO &8.
+      IF &7 EQ 'X'.
+        SHIFT &8 LEFT DELETING LEADING SPACE.
+      ELSEIF &7 EQ ' '.
+        SHIFT &8 RIGHT DELETING TRAILING SPACE.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+END-OF-DEFINITION.
+
+***************** MACROS DE LECTURA DE SIMBOLOS DE FORMULARIO **********
+*-- Obtiene el Valor de un Simbolo según SAP, de un Formulario Activo
+DEFINE FORMUL_VALOR_SAP.
+
+ MOVE &1 TO SIMBOLO$.
+ CONCATENATE AMPER SIMBOLO$ AMPER INTO SIMBOLO$.
+ CALL FUNCTION 'GET_TEXTSYMBOL'
+      EXPORTING
+*          LANGUAGE        = SY-LANGU
+           LINE            = SIMBOLO$
+           START_OFFSET    = 0
+      IMPORTING
+*          CONTINUE_OFFSET =
+*          name            =
+*          SUM             =
+*          VALUE           =
+*          VALUE_LENGTH    =
+           VALUE_RAW       = &2
+*          LENGTH          =
+*          OPTIONS         =
+      EXCEPTIONS
+           OTHERS          = 1.
+END-OF-DEFINITION.
+
+**************** TRATAMIENTO DE INCLUDES EN LOS FORMULARIOS ************
+* Borra cualquier include de un formulario tanto si es estandar como
+* sino lo es. Solo hay que pasarle el ID, el NAME, el LANGUAGE y el
+* OBJECT
+DEFINE BORRAR_INCLUDE.
+
+  CLEAR: D_ID$, D_LANGUAGE$, D_NAME$, D_OBJECT$.
+
+  MOVE: &1 TO D_ID$,
+        &2 TO D_LANGUAGE$,
+        &3 TO D_NAME$,
+        &4 TO D_OBJECT$.
+
+  CALL FUNCTION 'DELETE_TEXT'
+       EXPORTING
+            CLIENT          = SY-MANDT
+            ID              = D_ID$
+            LANGUAGE        = D_LANGUAGE$
+            NAME            = D_NAME$
+            OBJECT          = D_OBJECT$
+*           SAVEMODE_DIRECT = ' '
+*           TEXTMEMORY_ONLY = ' '
+       EXCEPTIONS
+            NOT_FOUND       = 1
+            OTHERS          = 2.
+
+END-OF-DEFINITION.
+
+****************  Justifica un texto estandar o no estandar ************
+****************  para a un número determinado de caracteres ***********
+DEFINE JUSTIFICAR_TEXTO.
+
+  CLEAR: J_CABECERA$, J_ID$, J_LANGUAGE$, J_NAME$, J_OBJECT$, J_LONG$,
+         J_NOMBRE$, J_TEXTOS$, J_TEXTOS_AJUSTADOS$.
+  REFRESH: J_TEXTOS$, J_TEXTOS_AJUSTADOS$.
+
+  MOVE: &1 TO J_ID$,
+        &2 TO J_LANGUAGE$,
+        &3 TO J_NAME$,
+        &4 TO J_OBJECT$,
+        &5 TO J_LONG$,
+        &6 TO J_NOMBRE$.
+
+  CALL FUNCTION 'READ_TEXT'
+        EXPORTING
+             CLIENT                  = SY-MANDT
+             ID                      = J_ID$
+             LANGUAGE                = J_LANGUAGE$
+             NAME                    = J_NAME$
+             OBJECT                  = J_OBJECT$
+        TABLES
+             LINES                   = J_TEXTOS$
+        EXCEPTIONS
+             ID                      = 1
+             LANGUAGE                = 2
+             NAME                    = 3
+             NOT_FOUND               = 4
+             OBJECT                  = 5
+             REFERENCE_CHECK         = 6
+             WRONG_ACCESS_TO_ARCHIVE = 7
+             OTHERS                  = 8.
+   CHECK SY-SUBRC EQ 0.
+
+  CALL FUNCTION 'Y_READ_TEXT_LONGITUD'
+       EXPORTING
+           LONGITUD  = J_LONG$
+       TABLES
+           TABLA_IN  = J_TEXTOS$
+           TABLA_OUT = J_TEXTOS_AJUSTADOS$
+       EXCEPTIONS
+           OTHERS    = 1.
+
+  LOOP AT J_TEXTOS_AJUSTADOS$.
+    MOVE '*' TO J_TEXTOS_AJUSTADOS$-TDFORMAT.
+    MODIFY J_TEXTOS_AJUSTADOS$.
+  ENDLOOP.
+* Montar la cabecera del TEXTO ESTANDAR.
+  MOVE: 'TEXT'      TO J_CABECERA$-TDOBJECT,
+        J_NOMBRE$   TO J_CABECERA$-TDNAME,
+        'ST'        TO J_CABECERA$-TDID,
+        J_LANGUAGE$ TO J_CABECERA$-TDSPRAS.
+
+  CALL FUNCTION 'SAVE_TEXT'
+      EXPORTING
+           CLIENT          = SY-MANDT
+           HEADER          = J_CABECERA$
+           SAVEMODE_DIRECT = 'X'
+       TABLES
+            LINES           = J_TEXTOS_AJUSTADOS$
+       EXCEPTIONS
+            ID              = 1
+            LANGUAGE        = 2
+            NAME            = 3
+            OBJECT          = 4
+            OTHERS          = 5.
+
+END-OF-DEFINITION.
+************************************************************************
+* Identica funcionalidad a la macro QUITA_D_CIFRA_CEROS_INUTILES2
+* pero quita también los ceros a la derecha de la parte decimal.
+************************************************************************
+DEFINE QUITA_D_CIFRA_CEROS_INUTILES3.
+  IF &1 CS '-'.   " el SEARCH tiene una utilizacion muy criticable
+    IF SY-FDPOS EQ '0'.
+      MOVE 'I' TO INDICADOR_POSICION$.      " singo menos a la izquierda
+      MOVE &1+1 TO &1.
+    ELSE.
+      MOVE 'D' TO INDICADOR_POSICION$.  " signo menos a la derecha
+      MOVE &1+0(SY-FDPOS) TO &1.
+    ENDIF.
+  ELSE.
+   CLEAR INDICADOR_POSICION$.
+  ENDIF.
+*-
+  WRITE &1 TO CADENA_EXAGERADA2$ LEFT-JUSTIFIED.
+   INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+*- BUSQUEDA DEL PUNTO, LA SENTENCIA SEARCH TIENE UN USO "DUDOSO"
+   IF CADENA_EXAGERADA2$ CS '.'.
+     POSICION_PUNTO$ = SY-FDPOS + 1.
+   ELSE.
+     POSICION_PUNTO$ = '0'.
+   ENDIF.
+*-  Busca LA COMA
+   IF CADENA_EXAGERADA2$ CS ','.
+     POSICION_COMA$ = SY-FDPOS + 1.
+   ELSE.
+     POSICION_COMA$ = '0'.
+   ENDIF.
+
+*$*$
+
+*- CASUISTICA sobre la posicion relativa del punto y de la coma
+ IF ( ( POSICION_COMA$ = '0' ) AND ( POSICION_PUNTO$ = '0' ) ).
+*- No hacer nada ¡no hay punto ni coma!
+ ELSEIF ( POSICION_PUNTO$ = '0' ).
+*- Solo hay coma ==> y es la que separa la parte decimal 98,900
+       POSICION_COMA$ = POSICION_COMA$ - 1.
+       MOVE CADENA_EXAGERADA2$+0(POSICION_COMA$) TO ENTERO$.
+     IF ENTERO$ EQ '0'.
+       POSICION_COMA$ = POSICION_COMA$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_COMA$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       &1 = CADENA_EXAGERADA2$.
+     ELSE.
+       MOVE ENTERO$ TO ENTERO$_CHAR.
+       INVIERTE_CADENA_CARACTERES ENTERO$_CHAR.
+       POSICION_COMA$ = POSICION_COMA$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_COMA$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       CONCATENATE CADENA_EXAGERADA2$ ',' ENTERO$_CHAR INTO &1.
+*      &1 = CADENA_EXAGERADA2$.
+     ENDIF.
+ ELSEIF ( POSICION_COMA$ = '0' ).
+*- Solo hay punto ==> y es el que separa la parte decimal 98.900
+       POSICION_PUNTO$ = POSICION_PUNTO$ - 1.
+       MOVE CADENA_EXAGERADA2$+0(POSICION_PUNTO$) TO ENTERO$.
+     IF ENTERO$ EQ '0'.
+       POSICION_PUNTO$ = POSICION_PUNTO$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_PUNTO$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       &1 = CADENA_EXAGERADA2$.
+      ELSE.
+       MOVE ENTERO$ TO ENTERO$_CHAR.
+       INVIERTE_CADENA_CARACTERES ENTERO$_CHAR.
+       POSICION_PUNTO$ = POSICION_PUNTO$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_PUNTO$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       CONCATENATE CADENA_EXAGERADA2$ '.' ENTERO$_CHAR INTO &1.
+     ENDIF.
+ ELSEIF ( POSICION_COMA$ GT POSICION_PUNTO$ ).
+*- El punto determina la parte decimal del numero
+       POSICION_PUNTO$ = POSICION_PUNTO$ - 1.
+       MOVE CADENA_EXAGERADA2$+0(POSICION_PUNTO$) TO ENTERO$.
+     IF ENTERO$ EQ '0'.
+       POSICION_PUNTO$ = POSICION_PUNTO$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_PUNTO$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       &1 = CADENA_EXAGERADA2$.
+      ELSE.
+       MOVE ENTERO$ TO ENTERO$_CHAR.
+       INVIERTE_CADENA_CARACTERES ENTERO$_CHAR.
+       POSICION_PUNTO$ = POSICION_PUNTO$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_PUNTO$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       CONCATENATE CADENA_EXAGERADA2$ '.' ENTERO$_CHAR INTO &1.
+     ENDIF.
+ ELSEIF ( POSICION_PUNTO$ GT POSICION_COMA$ ).
+*- La coma determina la parte decimal del numero
+       POSICION_COMA$ = POSICION_COMA$ - 1.
+       MOVE CADENA_EXAGERADA2$+0(POSICION_COMA$) TO ENTERO$.
+     IF ENTERO$ EQ '0'.
+       POSICION_COMA$ = POSICION_COMA$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_COMA$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       &1 = CADENA_EXAGERADA2$.
+      ELSE.
+       MOVE ENTERO$ TO ENTERO$_CHAR.
+       INVIERTE_CADENA_CARACTERES ENTERO$_CHAR.
+       POSICION_COMA$ = POSICION_COMA$ + 1.
+       MOVE CADENA_EXAGERADA2$+POSICION_COMA$ TO CADENA_EXAGERADA2$.
+       INVIERTE_CADENA_CARACTERES CADENA_EXAGERADA2$.
+       CONCATENATE CADENA_EXAGERADA2$ ',' ENTERO$_CHAR INTO &1.
+     ENDIF.
+ ENDIF.
+
+*- En este punto &1 tiene el "modulo" del valor pasado como parametro
+*- de acuerdo con la especifiación de la MACRO
+*- ==> en caso de haber sido detectado signo a la entrada, este es
+*-     situado en su posición relativa correcta
+
+*- Solo si se ha modificado el valor pasado como parametro
+  IF NOT ( ( POSICION_COMA$ = '0' ) AND ( POSICION_PUNTO$ = '0' ) ).
+    CASE INDICADOR_POSICION$.
+       WHEN 'D'.  " derecha
+         CONCATENATE &1 '-' INTO &1.
+         CONDENSE &1 NO-GAPS.
+       WHEN 'I'.  " izquierda
+         CONCATENATE '-' &1 INTO &1.
+         CONDENSE &1 NO-GAPS.
+    ENDCASE.
+ ENDIF.
+END-OF-DEFINITION.
